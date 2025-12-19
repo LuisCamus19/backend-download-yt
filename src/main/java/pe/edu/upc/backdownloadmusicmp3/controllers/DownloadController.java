@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets;
 @RequestMapping("/downloads")
 @RequiredArgsConstructor
 // IMPORTANTE: Agregamos "X-Filename" a exposedHeaders
-@CrossOrigin(origins = "http://localhost:4200", exposedHeaders = {"Content-Disposition", "X-Filename"})
+@CrossOrigin(origins = "*", exposedHeaders = {"Content-Disposition", "X-Filename"})
 public class DownloadController {
 
     private final IAudioDownloadService downloadService;
