@@ -18,7 +18,6 @@ import java.nio.charset.StandardCharsets;
 @RestController
 @RequestMapping("/downloads")
 @RequiredArgsConstructor
-// IMPORTANTE: Agregamos "X-Filename" a exposedHeaders
 @CrossOrigin(origins = "*", exposedHeaders = {"Content-Disposition", "X-Filename"})
 public class DownloadController {
 
@@ -27,26 +26,19 @@ public class DownloadController {
     @PostMapping("/mp3")
     public ResponseEntity<?> downloadMp3(@RequestBody DownloadRequestDTO request) {
         try {
-            // 1. Llamamos al servicio para obtener el recurso y el nombre
             AudioResponse response = downloadService.downloadAudio(request.getUrl(), request.getQuality());
 
-            // 2. Codificamos el nombre para enviarlo en una cabecera personalizada "X-Filename"
-            // Esto evita los problemas de codificación MIME (=?UTF-8?Q?...)
             String originalFilename = response.getFilename();
             String encodedFilename = URLEncoder.encode(originalFilename, StandardCharsets.UTF_8);
 
-            // Reemplazamos los "+" por "%20" para cumplir con estándares web estrictos
             encodedFilename = encodedFilename.replace("+", "%20");
 
-            // 3. Preparamos el Content-Disposition estándar como respaldo
             ContentDisposition contentDisposition = ContentDisposition.builder("attachment")
-                    .filename("download.mp3") // Nombre genérico por si falla el JS
+                    .filename("download.mp3")
                     .build();
 
             return ResponseEntity.ok()
-                    // Cabecera estándar
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
-                    // CABECERA PERSONALIZADA CON EL NOMBRE REAL
                     .header("X-Filename", encodedFilename)
                     .contentType(MediaType.parseMediaType("audio/mpeg"))
                     .body(response.getResource());
@@ -61,7 +53,6 @@ public class DownloadController {
     @PostMapping("/video")
     public ResponseEntity<?> downloadVideo(@RequestBody DownloadRequestDTO request) {
         try {
-            // Llamamos al método de VIDEO
             AudioResponse response = downloadService.downloadVideo(request.getUrl(), request.getQuality());
 
             String originalFilename = response.getFilename();
@@ -74,7 +65,6 @@ public class DownloadController {
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
                     .header("X-Filename", encodedFilename)
-                    // Cambiamos el tipo MIME a video/mp4
                     .contentType(MediaType.parseMediaType("video/mp4"))
                     .body(response.getResource());
 
