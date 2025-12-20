@@ -124,7 +124,8 @@ public class AudioDownloadServiceImplement implements IAudioDownloadService {
 
         commands.add(videoUrl);
 
-        // 5. GUARDAR HISTORIAL
+        // 5. GUARDAR HISTORIAL (DESACTIVADO)
+        /*
         try {
             DownloadHistory history = DownloadHistory.builder()
                     .videoUrl(videoUrl)
@@ -135,6 +136,7 @@ public class AudioDownloadServiceImplement implements IAudioDownloadService {
         } catch (Exception e) {
             System.err.println("Error guardando historial: " + e.getMessage());
         }
+        */
 
         // 6. EJECUTAR DESCARGA
         ProcessBuilder processBuilder = new ProcessBuilder(commands);
