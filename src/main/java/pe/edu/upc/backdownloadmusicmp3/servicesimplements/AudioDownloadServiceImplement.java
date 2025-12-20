@@ -7,22 +7,20 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.backdownloadmusicmp3.dtos.AudioResponse;
 import pe.edu.upc.backdownloadmusicmp3.servicesinterfaces.IAudioDownloadService;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor // Inyecta automáticamente el repositorio en el constructor
 public class AudioDownloadServiceImplement implements IAudioDownloadService {
 
-    // NOTA: Eliminamos el Repository porque estamos en modo "Sin Base de Datos"
-
-    // Rutas inyectadas
     @Value("${app.tools.ytdlp}")
     private String ytDlpPath;
 
@@ -41,45 +39,19 @@ public class AudioDownloadServiceImplement implements IAudioDownloadService {
 
     private AudioResponse ejecutarDescarga(String videoUrl, String qualityParam, String format) throws IOException {
 
-        // 1. VALIDACIONES
-        String youtubeRegex = "^(https?://)?(www\\.|m\\.)?(youtube\\.com|youtu\\.be)/.+$";
-        if (videoUrl == null || !videoUrl.matches(youtubeRegex)) {
-            throw new IllegalArgumentException("La URL proporcionada no es válida.");
-        }
+        System.out.println("--- INICIANDO DESCARGA ---");
+        System.out.println("URL: " + videoUrl);
 
-        // 2. OBTENER TÍTULO
-        String videoTitle = "Archivo_Descargado";
-        try {
-            ProcessBuilder titlePb = new ProcessBuilder(
-                    ytDlpPath,
-                    "--get-title",
-                    "--force-ipv4",
-                    "--no-warnings",
-                    "--no-playlist",
-                    "--socket-timeout", "5",
-                    videoUrl
-            );
-            titlePb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        // 1. OMITIMOS OBTENER TÍTULO PARA AHORRAR RAM
+        // Usamos un nombre genérico.
+        String videoTitle = "musica_descargada";
 
-            Process p = titlePb.start();
-            if (p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0) {
-                videoTitle = new String(p.getInputStream().readAllBytes()).trim();
-            } else {
-                if (p.isAlive()) p.destroyForcibly();
-            }
-        } catch (Exception e) {
-            System.err.println("Advertencia obteniendo título: " + e.getMessage());
-        }
-
-        videoTitle = videoTitle.replaceAll("[\\\\/:*?\"<>|]", "");
-        if (videoTitle.isEmpty()) videoTitle = "media_file";
-
-        // 3. CONFIGURAR RUTA TEMPORAL
+        // 2. RUTAS
         String uniqueFileName = "temp_" + UUID.randomUUID().toString() + "." + format;
         String systemTempDir = System.getProperty("java.io.tmpdir");
         Path tempFilePath = Paths.get(systemTempDir, uniqueFileName);
 
-        // 4. CONSTRUIR COMANDO
+        // 3. COMANDO
         List<String> commands = new ArrayList<>();
         commands.add(ytDlpPath);
         commands.add("--ffmpeg-location");
@@ -89,47 +61,49 @@ public class AudioDownloadServiceImplement implements IAudioDownloadService {
         commands.add("-o");
         commands.add(tempFilePath.toString());
         commands.add("--force-overwrites");
-
-        // BUFFER PARA NO LLENAR RAM
         commands.add("--buffer-size");
         commands.add("1024");
 
         if ("mp3".equals(format)) {
             String bitrate = (qualityParam == null) ? "128K" : qualityParam + "K";
             if (!bitrate.matches("\\d+K")) bitrate = "128K";
-
             commands.add("-x");
             commands.add("--audio-format");
             commands.add("mp3");
             commands.add("--audio-quality");
             commands.add(bitrate);
-            commands.add("--add-metadata");
         } else {
             String res = (qualityParam == null) ? "720" : qualityParam;
             commands.add("-f");
-            // MODO LIGERO PARA RENDER
             commands.add("best[ext=mp4][height<=" + res + "]/best[ext=mp4]/best");
         }
-
         commands.add(videoUrl);
 
-        // 5. GUARDAR HISTORIAL -> ELIMINADO COMPLETAMENTE
-
-        // 6. EJECUTAR DESCARGA
+        // 4. EJECUCION
         ProcessBuilder processBuilder = new ProcessBuilder(commands);
-        processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
-        processBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        // IMPORTANTE: Unimos los errores al flujo normal para verlos en el log
+        processBuilder.redirectErrorStream(true);
 
         try {
             Process process = processBuilder.start();
+
+            // LEER LOGS DEL PROCESO EN TIEMPO REAL (Para ver si yt-dlp se queja)
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    System.out.println("[yt-dlp]: " + line);
+                }
+            }
+
             int exitCode = process.waitFor();
+            System.out.println("Código de salida: " + exitCode);
 
             if (exitCode != 0) {
-                throw new IOException("Error en la descarga. Código de salida: " + exitCode);
+                throw new IOException("yt-dlp falló con código " + exitCode);
             }
 
             if (!Files.exists(tempFilePath)) {
-                throw new IOException("El archivo temporal no se generó.");
+                throw new IOException("El archivo no se creó en " + tempFilePath);
             }
 
             byte[] fileContent = Files.readAllBytes(tempFilePath);
@@ -140,9 +114,11 @@ public class AudioDownloadServiceImplement implements IAudioDownloadService {
                     videoTitle + "." + format
             );
 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Proceso interrumpido", e);
+        } catch (Exception e) {
+            // ESTO ES LO QUE NECESITAMOS VER
+            System.err.println("!!! ERROR CRÍTICO EN DESCARGA !!!");
+            e.printStackTrace();
+            throw new IOException("Error interno procesando descarga", e);
         }
     }
 
